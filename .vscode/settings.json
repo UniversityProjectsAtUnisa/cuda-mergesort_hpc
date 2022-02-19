@@ -1,0 +1,19 @@
+{
+  "files.associations": {
+    "string_view": "cpp",
+    "tuple": "cpp",
+    "array": "cpp",
+    "initializer_list": "cpp",
+    "utility": "cpp",
+    "*.back": "cpp",
+    "chrono": "cpp",
+    "cmath": "cpp",
+    "thread": "cpp",
+    "random": "cpp",
+    "limits": "cpp",
+    "deque": "cpp",
+    "string": "cpp",
+    "unordered_map": "cpp",
+    "vector": "cpp"
+  }
+}

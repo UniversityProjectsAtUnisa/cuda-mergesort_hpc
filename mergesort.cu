@@ -4,211 +4,159 @@
 #include <string.h>
 #define DATA int
 #define MIN(a, b) (a < b ? a : b)
-#define SIZE 5120
-#define BLOCKSIZE 16
-#define GRIDSIZE SIZE / BLOCKSIZE
-#define SHARED 102400
+#define SIZE 33554432
+#define BLOCKSIZE 8
+#define GRIDSIZE SIZE / 2 / BLOCKSIZE
+#define SHARED 4
+
+#define CUDA_CHECK(X)                                               \
+  {                                                                 \
+    cudaError_t _m_cudaStat = X;                                    \
+    if (cudaSuccess != _m_cudaStat) {                               \
+      fprintf(stderr, "\nCUDA_ERROR: %s in file %s line %d\n",      \
+              cudaGetErrorString(_m_cudaStat), __FILE__, __LINE__); \
+      exit(1);                                                      \
+    }                                                               \
+  }
 
 int _is_sorted(DATA *arr, size_t size);
 void MergeSortOnDevice(DATA *arr, size_t size);
-__global__ void MergeSortKernel(DATA *dArr, size_t size);
+__global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width);
+__device__ void gpu_bottomUpMerge(int* arr1, size_t size1, int* arr2, size_t size2, int* tmp);
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
   DATA *arr;
   size_t size = SIZE;
+  assert(GRIDSIZE * BLOCKSIZE == SIZE / 2);
+  assert(size == 0 || !(size & (size - 1)));
 
   arr = (DATA *)malloc(size * sizeof(DATA));
-  if (arr == NULL)
-  {
+  if (arr == NULL) {
     fprintf(stderr, "Memory could not be allocated");
     exit(EXIT_FAILURE);
   }
 
   srand(0);
-  for (size_t i = 0; i < size; i++)
-  {
-    arr[i] = rand(); // TODO: generate with sign and maybe in a range
+  for (size_t i = 0; i < size; i++) {
+    arr[i] = rand();  // TODO: generate with sign and maybe in a range
   }
 
   MergeSortOnDevice(arr, size);
   assert(_is_sorted(arr, size) == 1);
 }
 
-int _is_sorted(DATA *arr, size_t size)
-{
+int _is_sorted(DATA *arr, size_t size) {
   for (size_t i = 0; i < size - 1; i++)
-    if (arr[i] > arr[i + 1])
-      return 0;
+    if (arr[i] > arr[i + 1]) return 0;
   return 1;
 }
 
-void MergeSortOnDevice(DATA *arr, size_t size)
-{
-  if (size == 0)
-    return;
+void MergeSortOnDevice(DATA *arr, size_t size) {
+  if (size == 0) return;
 
-  DATA *dArr;
+  DATA *dArr, *tmp;
 
-  cudaMalloc(&dArr, size);
-  cudaMemcpy(dArr, arr, size, cudaMemcpyHostToDevice);
-
-  cudaError_t myCudaError;
-  myCudaError = cudaGetLastError();
+  size_t byteSize = size * sizeof(DATA);
+  CUDA_CHECK(cudaMalloc(&dArr, byteSize));
+  CUDA_CHECK(cudaMemcpy(dArr, arr, byteSize, cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMalloc(&tmp, byteSize));
 
   cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-  cudaEventRecord(start, 0);
+  CUDA_CHECK(cudaEventCreate(&start));
+  CUDA_CHECK(cudaEventCreate(&stop));
+  CUDA_CHECK(cudaEventRecord(start, 0));
 
-  MergeSortKernel<<<GRIDSIZE, BLOCKSIZE>>>(dArr, size, ceil(size / float(BLOCKSIZE * GRIDSIZE)));
+  //
+  // Slice up the list and give pieces of it to each thread, letting the pieces
+  // grow bigger and bigger until the whole list is sorted
+  //
 
-  myCudaError = cudaGetLastError();
-  if (myCudaError != cudaSuccess)
-  {
-    fprintf(stderr, "%s\n", cudaGetErrorString(myCudaError));
-    exit(1);
+  DATA *A = dArr, 
+       *B = tmp; 
+
+  int nBlocks = GRIDSIZE;
+  int blockSize = BLOCKSIZE;
+  for (size_t width = 2; width <= size; width <<= 1) {
+    // int slices = size / (nBlocks * blockSize * width);
+
+    // Actually call the kernel
+    gpu_mergesort<<<nBlocks, blockSize>>>(A, B, size, width);
+    // gpu_mergesort<<<nBlocks, nThreads / blocksPerGrid>>>(
+    //     A, B, size, width, slices, D_threads, D_blocks);
+
+    // Switch the input / output arrays instead of copying them around
+    A = A == dArr ? tmp : dArr;
+    B = B == dArr ? tmp : dArr;
+
+    if (blockSize > 1) {
+      blockSize /= 2;
+    } else {
+      nBlocks /= 2;
+    }
   }
 
-  cudaEventRecord(stop, 0);
-  cudaEventSynchronize(stop);
+  // MergeSortKernel<<<numBlocks, numThreads>>>(
+  //     dArr, size, ceil(size / float(BLOCKSIZE * GRIDSIZE)));
+
+  CUDA_CHECK(cudaEventRecord(stop, 0));
+  CUDA_CHECK(cudaEventSynchronize(stop));
   float elapsed;
-  cudaEventElapsedTime(&elapsed, start, stop);
-  elapsed = elapsed / 1000.f; // convert to seconds
-  cudaEventDestroy(start);
-  cudaEventDestroy(stop);
+  CUDA_CHECK(cudaEventElapsedTime(&elapsed, start, stop));
+  elapsed = elapsed / 1000.f;  // convert to seconds
+  CUDA_CHECK(cudaEventDestroy(start));
+  CUDA_CHECK(cudaEventDestroy(stop));
 
   printf("Kernel elapsed time %fs \n", elapsed);
 
-  cudaMemcpy(arr, dArr, size, cudaMemcpyDeviceToHost);
+  CUDA_CHECK(cudaMemcpy(arr, A, byteSize, cudaMemcpyDeviceToHost));
 
-  cudaFree(dArr);
+  CUDA_CHECK(cudaFree(dArr));
 }
 
-__device__ solve(int **tempList, int left_start, int right_start, int old_left_start, int my_start, int my_end, int left_end, int right_end, int headLoc)
-{
-  for (int i = 0; i < walkLen; i++)
-  {
-    if (tempList[current_list][left_start] < tempList[current_list][right_start])
-    {
-      tempList[!current_list][headLoc] = tempList[current_list][left_start]; /*Compare if my left value is smaller than the
-       left_start++;                                                           right value store it into the !current_list
-       headLoc++;                                                               row of array tempList*/
-      // Check if l is now empty
-      if (left_start == left_end)
-      {
-        // place the left over elements into the array
-        for (int j = right_start; j < right_end; j++)
-        {
-          tempList[!current_list][headLoc] = tempList[current_list][right_start];
-          right_start++;
-          headLoc++;
-        }
-      }
-    }
-    else
-    {
-      tempList[!current_list][headLoc] = tempList[current_list][right_start]; /*Compare if my right value is smaller than the
-       right_start++;                                                             left value store it into the !current_list
-       //Check if r is now empty                                                   row of array tempList*/
-      if (right_start == right_end)
-      {
-        // place the left over elements into the array
-        for (int j = left_start; j < left_end; j++)
-        {
-          tempList[!current_list][headLoc] = tempList[current_list][right_start];
-          right_start++;
-          headLoc++;
-        }
-      }
-    }
-  }
+__global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width) {
+  unsigned int idx =  blockIdx.x * blockDim.x + threadIdx.x;
+
+  size_t start = width * idx;
+
+  if (start >= size) return;
+
+  size_t halfSize = width / 2;
+
+  gpu_bottomUpMerge(A + start, halfSize, A + start + halfSize, halfSize, B + start);
 }
 
-__global__ void MergeSortKernel(DATA *dArr, size_t size, int elementsPerThread)
-{
-  int my_start, my_end; // indices of each thread's start/end
+// __global__ void gpu_mergesort(long *source, long *dest, long size, long width, long slices, dim3 *threads, dim3 *blocks) {
+//   unsigned int idx = getIdx(threads, blocks);
+//   long start = width * idx * slices, middle, end;
 
-  // Declare counters requierd for recursive mergesort
-  int left_start, right_start; // Start index of the two lists being merged
-  int old_left_start;
-  int left_end, right_end; // End index of the two lists being merged
-  int headLoc;             // current location of the write head on the newList
-  short current_list = 0;  /* Will be used to determine which of two lists is the
-     most up-to-date */
+//   for (long slice = 0; slice < slices; slice++) {
+//     if (start >= size) break;
 
-  // allocate enough shared memory for this block's list...
+//     middle = min(start + (width >> 1), size);
+//     end = min(start + width, size);
+//     gpu_bottomUpMerge(source, dest, start, middle, end);
+//     start += width;
+//   }
+// }
 
-  __shared__ DATA tempList[2][SHARED / sizeof(DATA)];
+__device__ void gpu_bottomUpMerge(int* arr1, size_t size1, int* arr2, size_t size2, int* tmp) {
+  int i = 0, j = 0;
 
-  // Load memory
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  for (int i = 0; i < elementsPerThread; i++)
-  {
-    if (index + i < length)
-    {
-      tempList[current_list][elementsPerThread * threadIdx.x + i] = d_list[index + i];
+  while (i < size1 && j < size2) {
+    if (arr1[i] < arr2[j]) {
+      tmp[i + j] = arr1[i];
+      i++;
+    } else {
+      tmp[i + j] = arr2[j];
+      j++;
     }
   }
-
-  // Wait until all memory has been loaded
-  __syncthreads();
-
-  // Merge the left and right lists.
-  for (int walkLen = 1; walkLen < length; walkLen *= 2)
-  {
-    // Set up start and end indices.
-    my_start = elementsPerThread * threadIdx.x;
-    my_end = my_start + elementsPerThread;
-    left_start = my_start;
-
-    while (left_start < my_end)
-    {
-      old_left_start = left_start; // left_start will be getting incremented soon.
-      // If this happens, we are done.
-      if (left_start > my_end)
-      {
-        left_start = length;
-        break;
-      }
-
-      left_end = left_start + walkLen;
-      if (left_end > my_end)
-      {
-        left_end = length;
-      }
-
-      right_start = left_end;
-      if (right_start > my_end)
-      {
-        right_end = length;
-      }
-
-      right_end = right_start + walkLen;
-      if (right_end > my_end)
-      {
-        right_end = length;
-      }
-
-      solve(&tempList, left_start, right_start, old_left_start, my_start, int my_end, left_end, right_end, headLoc);
-      left_start = old_left_start + 2 * walkLen;
-      current_list = !current_list;
-    }
+  while(i < size1) {
+    tmp[i + j] = arr1[i];
+    i++;
   }
-  // Wait until all thread completes swapping if not race condition will appear
-  // as it might update non sorted value to d_list
-  __syncthreads();
-
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  for (int i = 0; i < elementsPerThread; i++)
-  {
-    if (index + i < length)
-    {
-      d_list[index + i] = subList[current_list][elementsPerThread * threadIdx.x + i];
-    }
+  while(j < size2) {
+    tmp[i + j] = arr2[j];
+    j++;
   }
-  // Wait until all memory has been loaded
-  __syncthreads();
-
-  return;
 }

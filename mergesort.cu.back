@@ -1,0 +1,256 @@
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#define DATA int
+#define MIN(a, b) (a < b ? a : b)
+#define SIZE 64
+#define BLOCKSIZE 16
+#define GRIDSIZE SIZE / BLOCKSIZE
+#define SHARED 4
+
+int _is_sorted(DATA *arr, size_t size);
+void MergeSortOnDevice(DATA *arr, size_t size);
+__global__ void MergeSortKernel(DATA *dArr, size_t size, int elementsPerThread);
+
+int main(int argc, char **argv) {
+  DATA *arr;
+  size_t size = SIZE;
+
+  arr = (DATA *)malloc(size * sizeof(DATA));
+  if (arr == NULL) {
+    fprintf(stderr, "Memory could not be allocated");
+    exit(EXIT_FAILURE);
+  }
+
+  srand(0);
+  for (size_t i = 0; i < size; i++) {
+    arr[i] = rand();  // TODO: generate with sign and maybe in a range
+  }
+
+  MergeSortOnDevice(arr, size);
+  assert(_is_sorted(arr, size) == 1);
+}
+
+int _is_sorted(DATA *arr, size_t size) {
+  printf("Size: %d\n", size);
+  for (size_t i = 0; i < size - 1; i++) {
+    printf("%d\n", arr[i]);
+    // if (arr[i] > arr[i + 1]) return 0;
+  }
+  printf("%d\n", arr[SIZE-1]);
+  return 1;
+}
+
+void MergeSortOnDevice(DATA *arr, size_t size) {
+  if (size == 0) return;
+
+  DATA *dArr;
+
+  size *= sizeof(DATA);
+  cudaMalloc(&dArr, size);
+  cudaMemcpy(dArr, arr, size, cudaMemcpyHostToDevice);
+
+  cudaError_t myCudaError;
+  myCudaError = cudaGetLastError();
+
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+  cudaEventRecord(start, 0);
+
+  dim3 numThreads(BLOCKSIZE);
+  dim3 numBlocks(GRIDSIZE);
+  MergeSortKernel<<<numBlocks, numThreads>>>(
+      dArr, size, ceil(size / float(BLOCKSIZE * GRIDSIZE)));
+
+  myCudaError = cudaGetLastError();
+  if (myCudaError != cudaSuccess) {
+    fprintf(stderr, "%s\n", cudaGetErrorString(myCudaError));
+    exit(1);
+  }
+
+  cudaEventRecord(stop, 0);
+  cudaEventSynchronize(stop);
+  float elapsed;
+  cudaEventElapsedTime(&elapsed, start, stop);
+  elapsed = elapsed / 1000.f;  // convert to seconds
+  cudaEventDestroy(start);
+  cudaEventDestroy(stop);
+
+  printf("Kernel elapsed time %fs \n", elapsed);
+
+  cudaMemcpy(arr, dArr, size, cudaMemcpyDeviceToHost);
+
+  cudaFree(dArr);
+}
+
+// __device__ void solve(int **tempList, int left_start, int right_start, int
+// old_left_start, int my_start, int my_end, int left_end, int right_end, int
+// headLoc)
+// {
+//   for (int i = 0; i < walkLen; i++)
+//   {
+//     if (tempList[current_list][left_start] <
+//     tempList[current_list][right_start])
+//     {
+//       tempList[!current_list][headLoc] = tempList[current_list][left_start];
+//       /*Compare if my left value is smaller than the
+//        left_start++; right value store it into the !current_list headLoc++;
+//        row of array tempList*/
+//       // Check if l is now empty
+//       if (left_start == left_end)
+//       {
+//         // place the left over elements into the array
+//         for (int j = right_start; j < right_end; j++)
+//         {
+//           tempList[!current_list][headLoc] =
+//           tempList[current_list][right_start]; right_start++; headLoc++;
+//         }
+//       }
+//     }
+//     else
+//     {
+//       tempList[!current_list][headLoc] = tempList[current_list][right_start];
+//       /*Compare if my right value is smaller than the
+//        right_start++; left value store it into the !current_list
+//        //Check if r is now empty row of array tempList*/
+//       if (right_start == right_end)
+//       {
+//         // place the left over elements into the array
+//         for (int j = left_start; j < left_end; j++)
+//         {
+//           tempList[!current_list][headLoc] =
+//           tempList[current_list][right_start]; right_start++; headLoc++;
+//         }
+//       }
+//     }
+//   }
+// }
+
+__global__ void MergeSortKernel(DATA *dArr, size_t size,
+                                int elementsPerThread) {
+  //   int my_start, my_end;  // indices of each thread's start/end
+
+  // Declare counters requierd for recursive mergesort
+  int left_start, right_start;  // Start index of the two lists being merged
+  int old_left_start;
+  int left_end, right_end;  // End index of the two lists being merged
+  int headLoc;              // current location of the write head on the newList
+  short current_list = 0; /* Will be used to determine which of two lists is the
+    most up-to-date */
+
+  // allocate enough shared memory for this block's list...
+
+  __shared__ DATA tempList[SHARED / sizeof(DATA)];
+
+  //   Load memory
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  //   if (index < size) {
+  tempList[threadIdx.x] = dArr[index];
+  //   }
+
+  // Wait until all memory has been loaded
+  __syncthreads();
+
+  // Merge the left and right lists.
+
+  //   if (index < size) {
+  tempList[threadIdx.x] = index;
+  //   }
+
+  __syncthreads();
+
+  //   for (int walkLen = 1; walkLen < size; walkLen *= 2) {
+  //     // Set up start and end indices.
+  //     my_start = elementsPerThread * threadIdx.x;
+  //     my_end = my_start + elementsPerThread;
+  //     left_start = my_start;
+
+  //     while (left_start < my_end) {
+  //       old_left_start =
+  //           left_start;  // left_start will be getting incremented soon.
+  //       // If this happens, we are done.
+  //       if (left_start > my_end) {
+  //         left_start = size;
+  //         break;
+  //       }
+
+  //       left_end = left_start + walkLen;
+  //       if (left_end > my_end) {
+  //         left_end = size;
+  //       }
+
+  //       right_start = left_end;
+  //       if (right_start > my_end) {
+  //         right_end = size;
+  //       }
+
+  //       right_end = right_start + walkLen;
+  //       if (right_end > my_end) {
+  //         right_end = size;
+  //       }
+
+  //       //   solve(&tempList, left_start, right_start, old_left_start,
+  //       my_start,
+  //       //   my_end, left_end, right_end, headLoc);
+
+  //       int _left_start = left_start;
+  //       int _right_start = right_start;
+  //       int _old_left_start = old_left_start;
+  //       int _left_end = left_end;
+  //       int _right_end = right_end;
+  //       int _headLoc = headLoc;
+
+  //       for (int i = 0; i < walkLen; i++) {
+  //         if (tempList[current_list][_left_start] <
+  //             tempList[current_list][_right_start]) {
+  //           tempList[!current_list][_headLoc] =
+  //               tempList[current_list][_left_start]; /*Compare if
+  // my left value is smaller than the _left_start++; right value store it into
+  // the !current_list _headLoc++; row of array tempList*/
+  //           // Check if l is now empty
+  //           if (_left_start == _left_end) {
+  //             // place the left over elements into the array
+  //             for (int j = _right_start; j < _right_end; j++) {
+  //               tempList[!current_list][_headLoc] =
+  //                   tempList[current_list][_right_start];
+  //               _right_start++;
+  //               _headLoc++;
+  //             }
+  //           }
+  //         } else {
+  //           tempList[!current_list][_headLoc] =
+  //               tempList[current_list][_right_start]; /*Compare if my right
+  //               value
+  // is smaller than the _right_start++; left value store it into the
+  // !current_list
+  // //Check if r is now empty row of array tempList*/
+  //           if (_right_start == _right_end) {
+  //             // place the left over elements into the array
+  //             for (int j = _left_start; j < _left_end; j++) {
+  //               tempList[!current_list][_headLoc] =
+  //                   tempList[current_list][_right_start];
+  //               _right_start++;
+  //               _headLoc++;
+  //             }
+  //           }
+  //         }
+  //       }
+
+  //       _left_start = _old_left_start + 2 * walkLen;
+  //       current_list = !current_list;
+  //     }
+  //   }
+  // Wait until all thread completes swapping if not race condition will appear
+  // as it might update non sorted value to dArr
+  //   __syncthreads();
+
+  //   if (index < size) {
+  dArr[index] = tempList[threadIdx.x];
+  //   }
+  // Wait until all memory has been loaded
+  __syncthreads();
+
+  return;
+}
