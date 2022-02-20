@@ -22,7 +22,7 @@
 int _is_sorted(DATA *arr, size_t size);
 void MergeSortOnDevice(DATA *arr, size_t size);
 __global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width);
-__device__ void gpu_bottomUpMerge(int* arr1, size_t size1, int* arr2, size_t size2, int* tmp);
+__device__ void gpu_bottomUpMerge(DATA* arr1, size_t size1, DATA* arr2, size_t size2, DATA* tmp);
 
 int main(int argc, char **argv) {
   DATA *arr;
@@ -81,6 +81,7 @@ void MergeSortOnDevice(DATA *arr, size_t size) {
 
     // Actually call the kernel
     gpu_mergesort<<<nBlocks, blockSize>>>(A, B, size, width);
+    cudaDeviceSynchronize();
     // gpu_mergesort<<<nBlocks, nThreads / blocksPerGrid>>>(
     //     A, B, size, width, slices, D_threads, D_blocks);
 
@@ -125,22 +126,8 @@ __global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width) {
   gpu_bottomUpMerge(A + start, halfSize, A + start + halfSize, halfSize, B + start);
 }
 
-// __global__ void gpu_mergesort(long *source, long *dest, long size, long width, long slices, dim3 *threads, dim3 *blocks) {
-//   unsigned int idx = getIdx(threads, blocks);
-//   long start = width * idx * slices, middle, end;
-
-//   for (long slice = 0; slice < slices; slice++) {
-//     if (start >= size) break;
-
-//     middle = min(start + (width >> 1), size);
-//     end = min(start + width, size);
-//     gpu_bottomUpMerge(source, dest, start, middle, end);
-//     start += width;
-//   }
-// }
-
-__device__ void gpu_bottomUpMerge(int* arr1, size_t size1, int* arr2, size_t size2, int* tmp) {
-  int i = 0, j = 0;
+__device__ void gpu_bottomUpMerge(DATA* arr1, size_t size1, DATA* arr2, size_t size2, DATA* tmp) {
+  size_t i = 0, j = 0;
 
   while (i < size1 && j < size2) {
     if (arr1[i] < arr2[j]) {
