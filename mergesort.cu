@@ -4,8 +4,8 @@
 #include <string.h>
 #define DATA int
 #define MIN(a, b) (a < b ? a : b)
-#define SIZE 4194304
-#define BLOCKSIZE 32
+#define SIZE 65536
+#define BLOCKSIZE 1024
 #define TASKSIZE 2
 #define GRIDSIZE (SIZE / TASKSIZE / BLOCKSIZE)
 
@@ -187,12 +187,6 @@ __device__ void gpu_bottomUpMerge(DATA *arr1, size_t size1, DATA *arr2,
       j++;
     }
   }
-  while (i < size1) {
-    tmp[i + j] = arr1[i];
-    i++;
-  }
-  while (j < size2) {
-    tmp[i + j] = arr2[j];
-    j++;
-  }
+  if (i < size1) memcpy(tmp + i + j, arr1 + i, (size1 - i) * sizeof(int));
+  if (j < size2) memcpy(tmp + size1 + j, arr2 + j, (size2 - j) * sizeof(int));
 }

@@ -1,0 +1,19 @@
+{
+  "configurations": [
+      {
+          "name": "Linux",
+          "includePath": [
+              "${workspaceFolder}/**",
+              "${workspaceFolder}/parallel/include/*",
+              "${workspaceFolder}/serial/include/*",
+              "${workspaceFolder}/common/include/*"
+          ],
+          "defines": [],
+          "compilerPath": "/usr/bin/mpicc",
+          "cStandard": "gnu17",
+          "cppStandard": "gnu++14",
+          "intelliSenseMode": "linux-gcc-x64"
+      }
+  ],
+  "version": 4
+}
