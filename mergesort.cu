@@ -4,10 +4,10 @@
 #include <string.h>
 #define DATA int
 #define MIN(a, b) (a < b ? a : b)
-#define SIZE 4096
-#define BLOCKSIZE 8
-#define GRIDSIZE SIZE / 2 / BLOCKSIZE
-#define SHARED 4
+#define SIZE 4194304
+#define BLOCKSIZE 32
+#define TASKSIZE 2
+#define GRIDSIZE (SIZE / TASKSIZE / BLOCKSIZE)
 
 #define CUDA_CHECK(X)                                               \
   {                                                                 \
@@ -24,11 +24,14 @@ void MergeSortOnDevice(DATA *arr, size_t size);
 __global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width);
 __device__ void gpu_bottomUpMerge(DATA *arr1, size_t size1, DATA *arr2,
                                   size_t size2, DATA *tmp);
+__global__ void gpu_mergesort_tasksize(DATA *arr, DATA *tmp, size_t size,
+                                      size_t tasksize);
+__device__ int gpu_serial_merge_sort(DATA *arr, DATA *tmp, size_t n);
 
 int main(int argc, char **argv) {
   DATA *arr;
   size_t size = SIZE;
-  assert(GRIDSIZE * BLOCKSIZE == SIZE / 2);
+  assert(GRIDSIZE * BLOCKSIZE == SIZE / TASKSIZE);
   assert(size == 0 || !(size & (size - 1)));
 
   arr = (DATA *)malloc(size * sizeof(DATA));
@@ -76,12 +79,13 @@ void MergeSortOnDevice(DATA *arr, size_t size) {
 
   int nBlocks = GRIDSIZE;
   int blockSize = BLOCKSIZE;
-  for (size_t width = 2; width <= size; width <<= 1) {
+  gpu_mergesort_tasksize<<<nBlocks, blockSize>>>(A, B, size, TASKSIZE);
+
+  for (size_t width = TASKSIZE; width <= size; width <<= 1) {
     // int slices = size / (nBlocks * blockSize * width);
 
     // Actually call the kernel
     gpu_mergesort<<<nBlocks, blockSize>>>(A, B, size, width);
-    CUDA_CHECK(cudaDeviceSynchronize());
     // gpu_mergesort<<<nBlocks, nThreads / blocksPerGrid>>>(
     //     A, B, size, width, slices, D_threads, D_blocks);
 
@@ -114,8 +118,20 @@ void MergeSortOnDevice(DATA *arr, size_t size) {
   CUDA_CHECK(cudaFree(dArr));
 }
 
+__global__ void gpu_mergesort_tasksize(DATA *arr, DATA *tmp, size_t size,
+                                       size_t tasksize) {
+  DATA *A = arr, *B = tmp;
+  int n_swaps;
+  size_t start = tasksize * (blockIdx.x * blockDim.x + threadIdx.x);
+  if (start >= size) return;
+
+  n_swaps = gpu_serial_merge_sort(arr + start, tmp + start, tasksize);
+  if (n_swaps % 2 == 0) return;
+  memcpy(arr + start, tmp + start, tasksize * sizeof(DATA));
+}
+
 __global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width) {
-  size_t start = width*(blockIdx.x * blockDim.x + threadIdx.x);
+  size_t start = width * (blockIdx.x * blockDim.x + threadIdx.x);
 
   if (start >= size) return;
 
@@ -123,6 +139,39 @@ __global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width) {
 
   gpu_bottomUpMerge(A + start, halfSize, A + start + halfSize, halfSize,
                     B + start);
+}
+
+__device__ int gpu_serial_merge_sort(DATA *arr, DATA *tmp, size_t n) {
+  if (n == 0) return;
+  // print_array(arr, n);
+  // printf(
+  //     "------------------------------------------------------------------\n");
+  // print_array(tmp, n);
+  // printf(
+  //     "------------------------------------------------------------------\n");
+
+  int n_swaps = 0;
+  DATA *A = arr, *B = tmp;
+
+  for (size_t curr_size = 1; curr_size <= n - 1; curr_size *= 2) {
+    for (size_t left_start = 0; left_start <= n - curr_size - 1;
+         left_start += 2 * curr_size) {
+      // int left_size = MIN(curr_size, n - left_start);
+      int right_size = MIN(curr_size, n - left_start - curr_size);
+
+      // if (left_size < curr_size) break;
+      gpu_bottomUpMerge(A + left_start, curr_size, A + left_start + curr_size,
+                        // right_size, B);
+                        curr_size, B + left_start);
+    }
+    A = A == arr ? tmp : arr;
+    B = B == arr ? tmp : arr;
+    n_swaps++;
+    // print_array(A, n);
+    // printf(
+    //     "------------------------------------------------------------------\n");
+  }
+  return n_swaps;
 }
 
 __device__ void gpu_bottomUpMerge(DATA *arr1, size_t size1, DATA *arr2,
