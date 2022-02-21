@@ -4,7 +4,7 @@
 #include <string.h>
 #define DATA int
 #define MIN(a, b) (a < b ? a : b)
-#define SIZE 33554432
+#define SIZE 4096
 #define BLOCKSIZE 8
 #define GRIDSIZE SIZE / 2 / BLOCKSIZE
 #define SHARED 4
@@ -22,7 +22,8 @@
 int _is_sorted(DATA *arr, size_t size);
 void MergeSortOnDevice(DATA *arr, size_t size);
 __global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width);
-__device__ void gpu_bottomUpMerge(DATA* arr1, size_t size1, DATA* arr2, size_t size2, DATA* tmp);
+__device__ void gpu_bottomUpMerge(DATA *arr1, size_t size1, DATA *arr2,
+                                  size_t size2, DATA *tmp);
 
 int main(int argc, char **argv) {
   DATA *arr;
@@ -71,8 +72,7 @@ void MergeSortOnDevice(DATA *arr, size_t size) {
   // grow bigger and bigger until the whole list is sorted
   //
 
-  DATA *A = dArr, 
-       *B = tmp; 
+  DATA *A = dArr, *B = tmp;
 
   int nBlocks = GRIDSIZE;
   int blockSize = BLOCKSIZE;
@@ -81,7 +81,7 @@ void MergeSortOnDevice(DATA *arr, size_t size) {
 
     // Actually call the kernel
     gpu_mergesort<<<nBlocks, blockSize>>>(A, B, size, width);
-    cudaDeviceSynchronize();
+    CUDA_CHECK(cudaDeviceSynchronize());
     // gpu_mergesort<<<nBlocks, nThreads / blocksPerGrid>>>(
     //     A, B, size, width, slices, D_threads, D_blocks);
 
@@ -115,18 +115,18 @@ void MergeSortOnDevice(DATA *arr, size_t size) {
 }
 
 __global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width) {
-  unsigned int idx =  blockIdx.x * blockDim.x + threadIdx.x;
-
-  size_t start = width * idx;
+  size_t start = width*(blockIdx.x * blockDim.x + threadIdx.x);
 
   if (start >= size) return;
 
   size_t halfSize = width / 2;
 
-  gpu_bottomUpMerge(A + start, halfSize, A + start + halfSize, halfSize, B + start);
+  gpu_bottomUpMerge(A + start, halfSize, A + start + halfSize, halfSize,
+                    B + start);
 }
 
-__device__ void gpu_bottomUpMerge(DATA* arr1, size_t size1, DATA* arr2, size_t size2, DATA* tmp) {
+__device__ void gpu_bottomUpMerge(DATA *arr1, size_t size1, DATA *arr2,
+                                  size_t size2, DATA *tmp) {
   size_t i = 0, j = 0;
 
   while (i < size1 && j < size2) {
@@ -138,11 +138,11 @@ __device__ void gpu_bottomUpMerge(DATA* arr1, size_t size1, DATA* arr2, size_t s
       j++;
     }
   }
-  while(i < size1) {
+  while (i < size1) {
     tmp[i + j] = arr1[i];
     i++;
   }
-  while(j < size2) {
+  while (j < size2) {
     tmp[i + j] = arr2[j];
     j++;
   }
