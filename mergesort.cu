@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
   memcpy(hostArr, arr, size * sizeof(DATA));
   MergeSortOnHost(hostArr, size);
   MergeSortOnDevice(arr, size);
-  assert(memcmp(hostArr, arr, size * sizeof(DATA)));
+  assert(memcmp(hostArr, arr, size * sizeof(DATA)) == 0);
 }
 
 void MergeSortOnHost(DATA *arr, size_t n) {
