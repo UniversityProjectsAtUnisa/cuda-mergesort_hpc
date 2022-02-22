@@ -2,12 +2,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <windows.h>
 #define DATA int
 #define MIN(a, b) (a < b ? a : b)
-#define SIZE 65536
+#define MAX(a, b) (a > b ? a : b)
+#define SIZE 2048
 #define MAX_SHARED_SIZE 4096
 #define BLOCKSIZE 32
-#define TASKSIZE (MAX_SHARED_SIZE / BLOCKSIZE)
 
 #define CUDA_CHECK(X)                                               \
   {                                                                 \
@@ -19,7 +20,8 @@
     }                                                               \
   }
 
-void MergeSortOnDevice(DATA *arr, size_t size, int blockSize, int gridSize);
+void MergeSortOnDevice(DATA *arr, size_t size, int blockSize, int gridSize,
+                       int sharedBlockSize);
 void MergeSortOnHost(DATA *arr, size_t size);
 void _merge(DATA *arr1, size_t size1, DATA *arr2, size_t size2, DATA *tmp);
 __global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width);
@@ -36,12 +38,12 @@ void print_array_(DATA *arr, size_t n) {
 
 int main(int argc, char **argv) {
   size_t size = SIZE;
-  if (argc > 1)  sscanf(argv[1], "%zu", &size);
+  if (argc > 1) sscanf(argv[1], "%zu", &size);
   int blockSize = (argc > 2) ? atoi(argv[2]) : BLOCKSIZE;
-  int taskSize = (argc > 3) ? atoi(argv[3]) : TASKSIZE;
-  int gridSize = size / taskSize / blockSize;
-
-  assert(gridSize * blockSize == size / taskSize);
+  int sharedBlockSize = (argc > 3) ? atoi(argv[3]) : BLOCKSIZE;
+  int gridSize = MAX(1, size / MAX_SHARED_SIZE);
+  // printf("size: %d, blockSize: %d, sharedBlockSize: %d, gridSize: %d, ", size,
+  //        blockSize, sharedBlockSize, gridSize);
   assert(size == 0 || !(size & (size - 1)));
   DATA *arr;
 
@@ -64,8 +66,15 @@ int main(int argc, char **argv) {
   }
   memcpy(hostArr, arr, size * sizeof(DATA));
   MergeSortOnHost(hostArr, size);
-  MergeSortOnDevice(arr, size, blockSize, gridSize);
+  MergeSortOnDevice(arr, size, blockSize, gridSize, sharedBlockSize);
   assert(memcmp(hostArr, arr, size * sizeof(DATA)) == 0);
+  printf("sleep");
+  for (size_t i = 0; i < 100000000; i++)
+  {
+    printf("");
+  }
+  
+  printf("end sleep");
 }
 
 void MergeSortOnHost(DATA *arr, size_t n) {
@@ -107,7 +116,8 @@ void _merge(DATA *arr1, size_t size1, DATA *arr2, size_t size2, DATA *tmp) {
   memcpy(arr1, tmp, (size1 + size2) * sizeof(DATA));
 }
 
-void MergeSortOnDevice(DATA *arr, size_t size, int blockSize, int gridSize) {
+void MergeSortOnDevice(DATA *arr, size_t size, int blockSize, int gridSize,
+                       int sharedBlockSize) {
   if (size == 0) return;
 
   DATA *dArr, *tmp;
@@ -129,8 +139,7 @@ void MergeSortOnDevice(DATA *arr, size_t size, int blockSize, int gridSize) {
 
   DATA *A = dArr, *B = tmp;
 
-
-  gpu_shared_mergesort<<<gridSize, blockSize>>>(A, B, size);
+  gpu_shared_mergesort<<<gridSize, sharedBlockSize>>>(A, B, size);
 
   size_t starting_width = (MIN(MAX_SHARED_SIZE, size / gridSize)) * 2;
   for (size_t width = starting_width; width <= size; width <<= 1) {
@@ -188,12 +197,7 @@ __device__ int gpu_serial_merge_sort(DATA *arr, DATA *tmp, size_t n) {
   for (size_t curr_size = 1; curr_size <= n - 1; curr_size *= 2) {
     for (size_t left_start = 0; left_start <= n - curr_size - 1;
          left_start += 2 * curr_size) {
-      // int left_size = MIN(curr_size, n - left_start);
-      int right_size = MIN(curr_size, n - left_start - curr_size);
-
-      // if (left_size < curr_size) break;
       gpu_bottomUpMerge(A + left_start, curr_size, A + left_start + curr_size,
-                        // right_size, B);
                         curr_size, B + left_start);
     }
     A = A == arr ? tmp : arr;
@@ -209,6 +213,10 @@ __device__ int gpu_serial_merge_sort(DATA *arr, DATA *tmp, size_t n) {
 __global__ void gpu_shared_mergesort(DATA *A, DATA *B, size_t size) {
   __shared__ DATA localA[MAX_SHARED_SIZE];
   __shared__ DATA localB[MAX_SHARED_SIZE];
+
+  // __shared__ DATA localA[2*MAX_SHARED_SIZE];
+  // DATA *localB = localA + MAX_SHARED_SIZE;
+
   // Copy to shared memory
   size_t blockDataSize = size / gridDim.x;
   size_t local_n = blockDataSize / blockDim.x;

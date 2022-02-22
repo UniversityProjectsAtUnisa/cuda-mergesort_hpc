@@ -35,8 +35,8 @@ int main(int argc, char **argv) {
   int taskSize = (argc > 3) ? atoi(argv[3]) : TASKSIZE;
   int gridSize = size / taskSize / blockSize;
 
-  assert(gridSize * blockSize == size / taskSize);
   assert(size == 0 || !(size & (size - 1)));
+  assert(gridSize * blockSize == size / taskSize);
   DATA *arr;
 
   arr = (DATA *)malloc(size * sizeof(DATA));
@@ -58,7 +58,7 @@ int main(int argc, char **argv) {
   }
   memcpy(hostArr, arr, size * sizeof(DATA));
   MergeSortOnHost(hostArr, size);
-  MergeSortOnDevice(arr, size);
+  MergeSortOnDevice(arr, size, blockSize, gridSize, taskSize);
   assert(memcmp(hostArr, arr, size * sizeof(DATA)) == 0);
 }
 
@@ -160,7 +160,6 @@ void MergeSortOnDevice(DATA *arr, size_t size, int blockSize, int gridSize, int 
 
 __global__ void gpu_mergesort_tasksize(DATA *arr, DATA *tmp, size_t size,
                                        size_t tasksize) {
-  DATA *A = arr, *B = tmp;
   int n_swaps;
   size_t start = tasksize * (blockIdx.x * blockDim.x + threadIdx.x);
   if (start >= size) return;
@@ -196,10 +195,6 @@ __device__ int gpu_serial_merge_sort(DATA *arr, DATA *tmp, size_t n) {
   for (size_t curr_size = 1; curr_size <= n - 1; curr_size *= 2) {
     for (size_t left_start = 0; left_start <= n - curr_size - 1;
          left_start += 2 * curr_size) {
-      // int left_size = MIN(curr_size, n - left_start);
-      int right_size = MIN(curr_size, n - left_start - curr_size);
-
-      // if (left_size < curr_size) break;
       gpu_bottomUpMerge(A + left_start, curr_size, A + left_start + curr_size,
                         // right_size, B);
                         curr_size, B + left_start);
