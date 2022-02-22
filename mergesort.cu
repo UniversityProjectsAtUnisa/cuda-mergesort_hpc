@@ -153,7 +153,7 @@ void MergeSortOnDevice(DATA *arr, size_t size) {
   CUDA_CHECK(cudaEventDestroy(start));
   CUDA_CHECK(cudaEventDestroy(stop));
 
-  printf("Kernel elapsed time %fs \n", elapsed);
+  printf("%f", elapsed);
 
   CUDA_CHECK(cudaMemcpy(arr, A, byteSize, cudaMemcpyDeviceToHost));
 
