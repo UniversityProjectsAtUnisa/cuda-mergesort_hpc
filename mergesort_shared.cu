@@ -7,8 +7,7 @@
 #define SIZE 65536
 #define MAX_SHARED_SIZE 4096
 #define BLOCKSIZE 32
-#define TASK_SIZE (MAX_SHARED_SIZE / BLOCKSIZE)
-#define GRIDSIZE (SIZE / TASK_SIZE / BLOCKSIZE)
+#define TASKSIZE (MAX_SHARED_SIZE / BLOCKSIZE)
 
 #define CUDA_CHECK(X)                                               \
   {                                                                 \
@@ -20,7 +19,7 @@
     }                                                               \
   }
 
-void MergeSortOnDevice(DATA *arr, size_t size);
+void MergeSortOnDevice(DATA *arr, size_t size, int blockSize, int gridSize);
 void MergeSortOnHost(DATA *arr, size_t size);
 void _merge(DATA *arr1, size_t size1, DATA *arr2, size_t size2, DATA *tmp);
 __global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width);
@@ -36,10 +35,15 @@ void print_array_(DATA *arr, size_t n) {
 }
 
 int main(int argc, char **argv) {
-  DATA *arr;
   size_t size = SIZE;
-  // assert(GRIDSIZE * BLOCKSIZE == SIZE / 2);
+  if (argc > 1)  sscanf(argv[1], "%zu", &size);
+  int blockSize = (argc > 2) ? atoi(argv[2]) : BLOCKSIZE;
+  int taskSize = (argc > 3) ? atoi(argv[3]) : TASKSIZE;
+  int gridSize = size / taskSize / blockSize;
+
+  assert(gridSize * blockSize == size / taskSize);
   assert(size == 0 || !(size & (size - 1)));
+  DATA *arr;
 
   arr = (DATA *)malloc(size * sizeof(DATA));
   if (arr == NULL) {
@@ -60,7 +64,7 @@ int main(int argc, char **argv) {
   }
   memcpy(hostArr, arr, size * sizeof(DATA));
   MergeSortOnHost(hostArr, size);
-  MergeSortOnDevice(arr, size);
+  MergeSortOnDevice(arr, size, blockSize, gridSize);
   assert(memcmp(hostArr, arr, size * sizeof(DATA)) == 0);
 }
 
@@ -103,7 +107,7 @@ void _merge(DATA *arr1, size_t size1, DATA *arr2, size_t size2, DATA *tmp) {
   memcpy(arr1, tmp, (size1 + size2) * sizeof(DATA));
 }
 
-void MergeSortOnDevice(DATA *arr, size_t size) {
+void MergeSortOnDevice(DATA *arr, size_t size, int blockSize, int gridSize) {
   if (size == 0) return;
 
   DATA *dArr, *tmp;
@@ -125,18 +129,16 @@ void MergeSortOnDevice(DATA *arr, size_t size) {
 
   DATA *A = dArr, *B = tmp;
 
-  int nBlocks = GRIDSIZE;
-  int blockSize = BLOCKSIZE;
 
-  gpu_shared_mergesort<<<GRIDSIZE, BLOCKSIZE>>>(A, B, SIZE);
+  gpu_shared_mergesort<<<gridSize, blockSize>>>(A, B, size);
 
-  size_t starting_width = (MIN(MAX_SHARED_SIZE, SIZE / GRIDSIZE)) * 2;
+  size_t starting_width = (MIN(MAX_SHARED_SIZE, size / gridSize)) * 2;
   for (size_t width = starting_width; width <= size; width <<= 1) {
-    // int slices = size / (nBlocks * blockSize * width);
+    // int slices = size / (gridSize * blockSize * width);
 
     // Actually call the kernel
-    gpu_mergesort<<<nBlocks, blockSize>>>(A, B, size, width);
-    // gpu_mergesort<<<nBlocks, nThreads / blocksPerGrid>>>(
+    gpu_mergesort<<<gridSize, blockSize>>>(A, B, size, width);
+    // gpu_mergesort<<<gridSize, nThreads / blocksPerGrid>>>(
     //     A, B, size, width, slices, D_threads, D_blocks);
 
     // Switch the input / output arrays instead of copying them around
@@ -146,12 +148,9 @@ void MergeSortOnDevice(DATA *arr, size_t size) {
     if (blockSize > 1) {
       blockSize /= 2;
     } else {
-      nBlocks /= 2;
+      gridSize /= 2;
     }
   }
-
-  // MergeSortKernel<<<numBlocks, numThreads>>>(
-  //     dArr, size, ceil(size / float(BLOCKSIZE * GRIDSIZE)));
 
   CUDA_CHECK(cudaEventRecord(stop, 0));
   CUDA_CHECK(cudaEventSynchronize(stop));
@@ -208,12 +207,10 @@ __device__ int gpu_serial_merge_sort(DATA *arr, DATA *tmp, size_t n) {
 }
 
 __global__ void gpu_shared_mergesort(DATA *A, DATA *B, size_t size) {
-  __shared__ DATA localA[MIN(MAX_SHARED_SIZE, SIZE / GRIDSIZE)];
-  __shared__ DATA localB[MIN(MAX_SHARED_SIZE, SIZE / GRIDSIZE)];
+  __shared__ DATA localA[MAX_SHARED_SIZE];
+  __shared__ DATA localB[MAX_SHARED_SIZE];
   // Copy to shared memory
-  size_t blockDataSize =
-      size / gridDim.x;  // TODO: does not work if MIN(MAX_SHARED_SIZE, SIZE) ==
-                         // MAX_SHARED_SIZE
+  size_t blockDataSize = size / gridDim.x;
   size_t local_n = blockDataSize / blockDim.x;
   size_t localStart = local_n * threadIdx.x;
   size_t globalStart = local_n * (blockIdx.x * blockDim.x + threadIdx.x);
@@ -243,24 +240,22 @@ __global__ void gpu_shared_mergesort(DATA *A, DATA *B, size_t size) {
   // }
   // __syncthreads();
 
-  if (BLOCKSIZE > 1) {
-    int shouldWork, halfSize, counter = 2;
-    local_n <<= 1;
+  int shouldWork, halfSize, counter = 2;
+  local_n <<= 1;
 
-    while (local_n <= blockDataSize) {
-      shouldWork = threadIdx.x % counter == 0;
-      if (shouldWork) {
-        halfSize = local_n / 2;
-        gpu_bottomUpMerge(localAptr + localStart, halfSize,
-                          localAptr + localStart + halfSize, halfSize,
-                          localBptr + localStart);
-      }
-      local_n <<= 1;
-      counter <<= 1;
-      localAptr = localAptr == localA ? localB : localA;
-      localBptr = localBptr == localA ? localB : localA;
-      __syncthreads();
+  while (local_n <= blockDataSize) {
+    shouldWork = threadIdx.x % counter == 0;
+    if (shouldWork) {
+      halfSize = local_n / 2;
+      gpu_bottomUpMerge(localAptr + localStart, halfSize,
+                        localAptr + localStart + halfSize, halfSize,
+                        localBptr + localStart);
     }
+    local_n <<= 1;
+    counter <<= 1;
+    localAptr = localAptr == localA ? localB : localA;
+    localBptr = localBptr == localA ? localB : localA;
+    __syncthreads();
   }
 
   // if (threadIdx.x == 0) {
