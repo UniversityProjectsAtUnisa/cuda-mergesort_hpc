@@ -19,7 +19,6 @@
     }                                                               \
   }
 
-int _is_sorted(DATA *arr, size_t size);
 void MergeSortOnDevice(DATA *arr, size_t size);
 void MergeSortOnHost(DATA *arr, size_t size);
 void _merge(DATA *arr1, size_t size1, DATA *arr2, size_t size2, DATA *tmp);
@@ -46,6 +45,7 @@ int main(int argc, char **argv) {
   for (size_t i = 0; i < size; i++) {
     arr[i] = rand();  // TODO: generate with sign and maybe in a range
   }
+
   DATA *hostArr;
   hostArr = (DATA *)malloc(size * sizeof(DATA));
   if (hostArr == NULL) {
@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
   memcpy(hostArr, arr, size * sizeof(DATA));
   MergeSortOnHost(hostArr, size);
   MergeSortOnDevice(arr, size);
-  assert(memcmp(hostArr, arr, size * sizeof(DATA)));
+  assert(memcmp(hostArr, arr, size * sizeof(DATA)) == 0);
 }
 
 void MergeSortOnHost(DATA *arr, size_t n) {
