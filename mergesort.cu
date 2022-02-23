@@ -1,3 +1,30 @@
+/*
+ * Course: High Performance Computing 2021/2022
+ * 
+ * Lecturer: Francesco Moscato    fmoscato@unisa.it
+ * 
+ * Group: 
+ * De Stefano Alessandro   0622701470  a.destefano56@studenti.unisa.it
+ * Della Rocca Marco   0622701573  m.dellarocca22@studenti.unisa.it
+ * 
+ * CUDA implementation of mergesort algorithm 
+ * Copyright (C) 2022 Alessandro De Stefano (EarendilTiwele) Marco Della Rocca (marco741)
+ * 
+ * This file is part of OMP Mergesort implementation.
+ * 
+ * CUDA Mergesort implementation is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * CUDA Mergesort implementation is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with CUDA Mergesort implementation.  If not, see <http://www.gnu.org/licenses/>.
+ */
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,7 +74,7 @@ int main(int argc, char **argv) {
 
   srand(0);
   for (size_t i = 0; i < size; i++) {
-    arr[i] = rand();  // TODO: generate with sign and maybe in a range
+    arr[i] = rand() - RAND_MAX/2;
   }
 
   DATA *hostArr;
@@ -116,21 +143,13 @@ void MergeSortOnDevice(DATA *arr, size_t size, int blockSize, int gridSize, int 
   CUDA_CHECK(cudaEventCreate(&stop));
   CUDA_CHECK(cudaEventRecord(start, 0));
 
-  //
-  // Slice up the list and give pieces of it to each thread, letting the pieces
-  // grow bigger and bigger until the whole list is sorted
-  //
-
   DATA *A = dArr, *B = tmp;
   gpu_mergesort_tasksize<<<gridSize, blockSize>>>(A, B, size, taskSize);
 
   for (size_t width = taskSize; width <= size; width <<= 1) {
-    // int slices = size / (gridSize * blockSize * width);
 
     // Actually call the kernel
     gpu_mergesort<<<gridSize, blockSize>>>(A, B, size, width);
-    // gpu_mergesort<<<gridSize, nThreads / blocksPerGrid>>>(
-    //     A, B, size, width, slices, D_threads, D_blocks);
 
     // Switch the input / output arrays instead of copying them around
     A = A == dArr ? tmp : dArr;
@@ -182,12 +201,6 @@ __global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width) {
 
 __device__ int gpu_serial_merge_sort(DATA *arr, DATA *tmp, size_t n) {
   if (n == 0) return;
-  // print_array(arr, n);
-  // printf(
-  //     "------------------------------------------------------------------\n");
-  // print_array(tmp, n);
-  // printf(
-  //     "------------------------------------------------------------------\n");
 
   int n_swaps = 0;
   DATA *A = arr, *B = tmp;
@@ -196,15 +209,11 @@ __device__ int gpu_serial_merge_sort(DATA *arr, DATA *tmp, size_t n) {
     for (size_t left_start = 0; left_start <= n - curr_size - 1;
          left_start += 2 * curr_size) {
       gpu_bottomUpMerge(A + left_start, curr_size, A + left_start + curr_size,
-                        // right_size, B);
                         curr_size, B + left_start);
     }
     A = A == arr ? tmp : arr;
     B = B == arr ? tmp : arr;
     n_swaps++;
-    // print_array(A, n);
-    // printf(
-    //     "------------------------------------------------------------------\n");
   }
   return n_swaps;
 }

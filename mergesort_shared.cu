@@ -1,8 +1,34 @@
+/*
+ * Course: High Performance Computing 2021/2022
+ * 
+ * Lecturer: Francesco Moscato    fmoscato@unisa.it
+ * 
+ * Group: 
+ * De Stefano Alessandro   0622701470  a.destefano56@studenti.unisa.it
+ * Della Rocca Marco   0622701573  m.dellarocca22@studenti.unisa.it
+ * 
+ * CUDA implementation of mergesort algorithm 
+ * Copyright (C) 2022 Alessandro De Stefano (EarendilTiwele) Marco Della Rocca (marco741)
+ * 
+ * This file is part of OMP Mergesort implementation.
+ * 
+ * CUDA Mergesort implementation is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * CUDA Mergesort implementation is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with CUDA Mergesort implementation.  If not, see <http://www.gnu.org/licenses/>.
+ */
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
 #define DATA int
 #define MIN(a, b) (a < b ? a : b)
 #define MAX(a, b) (a > b ? a : b)
@@ -42,8 +68,6 @@ int main(int argc, char **argv) {
   int blockSize = (argc > 2) ? atoi(argv[2]) : BLOCKSIZE;
   int sharedBlockSize = (argc > 3) ? atoi(argv[3]) : BLOCKSIZE;
   int gridSize = MAX(1, size / MAX_SHARED_SIZE);
-  // printf("size: %d, blockSize: %d, sharedBlockSize: %d, gridSize: %d, ", size,
-  //        blockSize, sharedBlockSize, gridSize);
   assert(size == 0 || !(size & (size - 1)));
   DATA *arr;
 
@@ -55,7 +79,7 @@ int main(int argc, char **argv) {
 
   srand(0);
   for (size_t i = 0; i < size; i++) {
-    arr[i] = rand();  // TODO: generate with sign and maybe in a range
+    arr[i] = rand() - RAND_MAX/2;
   }
 
   DATA *hostArr;
@@ -68,13 +92,6 @@ int main(int argc, char **argv) {
   MergeSortOnHost(hostArr, size);
   MergeSortOnDevice(arr, size, blockSize, gridSize, sharedBlockSize);
   assert(memcmp(hostArr, arr, size * sizeof(DATA)) == 0);
-  printf("sleep");
-  for (size_t i = 0; i < 100000000; i++)
-  {
-    printf("");
-  }
-  
-  printf("end sleep");
 }
 
 void MergeSortOnHost(DATA *arr, size_t n) {
@@ -132,23 +149,13 @@ void MergeSortOnDevice(DATA *arr, size_t size, int blockSize, int gridSize,
   CUDA_CHECK(cudaEventCreate(&stop));
   CUDA_CHECK(cudaEventRecord(start, 0));
 
-  //
-  // Slice up the list and give pieces of it to each thread, letting the pieces
-  // grow bigger and bigger until the whole list is sorted
-  //
-
   DATA *A = dArr, *B = tmp;
 
   gpu_shared_mergesort<<<gridSize, sharedBlockSize>>>(A, B, size);
 
   size_t starting_width = (MIN(MAX_SHARED_SIZE, size / gridSize)) * 2;
   for (size_t width = starting_width; width <= size; width <<= 1) {
-    // int slices = size / (gridSize * blockSize * width);
-
-    // Actually call the kernel
     gpu_mergesort<<<gridSize, blockSize>>>(A, B, size, width);
-    // gpu_mergesort<<<gridSize, nThreads / blocksPerGrid>>>(
-    //     A, B, size, width, slices, D_threads, D_blocks);
 
     // Switch the input / output arrays instead of copying them around
     A = A == dArr ? tmp : dArr;
