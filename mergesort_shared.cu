@@ -191,13 +191,6 @@ __device__ void print_array(DATA *arr, size_t n) {
 
 __device__ int gpu_serial_merge_sort(DATA *arr, DATA *tmp, size_t n) {
   if (n == 0) return;
-  // print_array(arr, n);
-  // printf(
-  //     "------------------------------------------------------------------\n");
-  // print_array(tmp, n);
-  // printf(
-  //     "------------------------------------------------------------------\n");
-
   int n_swaps = 0;
   DATA *A = arr, *B = tmp;
 
@@ -210,9 +203,6 @@ __device__ int gpu_serial_merge_sort(DATA *arr, DATA *tmp, size_t n) {
     A = A == arr ? tmp : arr;
     B = B == arr ? tmp : arr;
     n_swaps++;
-    // print_array(A, n);
-    // printf(
-    //     "------------------------------------------------------------------\n");
   }
   return n_swaps;
 }
@@ -221,20 +211,11 @@ __global__ void gpu_shared_mergesort(DATA *A, DATA *B, size_t size) {
   __shared__ DATA localA[MAX_SHARED_SIZE];
   __shared__ DATA localB[MAX_SHARED_SIZE];
 
-  // __shared__ DATA localA[2*MAX_SHARED_SIZE];
-  // DATA *localB = localA + MAX_SHARED_SIZE;
-
   // Copy to shared memory
   size_t blockDataSize = size / gridDim.x;
   size_t local_n = blockDataSize / blockDim.x;
   size_t localStart = local_n * threadIdx.x;
   size_t globalStart = local_n * (blockIdx.x * blockDim.x + threadIdx.x);
-
-  // if (threadIdx.x == 0)
-  //   printf("local_n: %d, localStart: %d, globalStart: %d, blockSize: %d,
-  //   blockIdx: %d\n",
-  //          local_n, localStart, globalStart, local_n * blockDim.x,
-  //          blockIdx.x);
 
   memcpy(localA + localStart, A + globalStart, local_n * sizeof(DATA));
 
@@ -248,17 +229,10 @@ __global__ void gpu_shared_mergesort(DATA *A, DATA *B, size_t size) {
   DATA *localBptr = localAptr == localA ? localB : localA;
   __syncthreads();
 
-  // if (blockIdx.x == 1 && threadIdx.x == 0) {
-  //   print_array(localAptr, blockDataSize);
-  //   printf(
-  //       "------------------------------------------------------------------\n");
-  // }
-  // __syncthreads();
-
   int shouldWork, halfSize, counter = 2;
   local_n <<= 1;
 
-  while (local_n <= blockDataSize) {
+  while (local_n < blockDataSize) {
     shouldWork = threadIdx.x % counter == 0;
     if (shouldWork) {
       halfSize = local_n / 2;
@@ -272,31 +246,12 @@ __global__ void gpu_shared_mergesort(DATA *A, DATA *B, size_t size) {
     localBptr = localBptr == localA ? localB : localA;
     __syncthreads();
   }
-
-  // if (threadIdx.x == 0) {
-  //   print_array(localAptr, local_n /2);
-  //   printf(
-  //       "------------------------------------------------------------------\n");
-  // }
-  //     __syncthreads();
-
-  // if (threadIdx.x == 1) {
-  //   print_array(localBptr, local_n /2);
-  //   printf(
-  //       "------------------------------------------------------------------\n");
-  // }
-
-  local_n = blockDataSize / blockDim.x;
-  // for (size_t i = 0; i < local_n; i++) {
-  //   A[globalStart + i] = localAptr[localStart + i];
-  // }
-  memcpy(A + globalStart, localAptr + localStart, local_n * sizeof(DATA));
-
-  // if (threadIdx.x == 0) {
-  //   print_array(A, local_n * 2);
-  //   printf(
-  //       "------------------------------------------------------------------\n");
-  // }
+  if (threadIdx.x == 0) {
+    halfSize = local_n / 2;
+    gpu_bottomUpMerge(localAptr + localStart, halfSize,
+                      localAptr + localStart + halfSize, halfSize,
+                      A + globalStart);
+  }
 }
 
 __global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width) {
