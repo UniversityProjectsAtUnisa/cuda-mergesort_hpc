@@ -34,6 +34,7 @@
 #define MAX(a, b) (a > b ? a : b)
 #define SIZE 2048
 #define MAX_SHARED_SIZE 4096
+#define MAX_THREADS_PER_BLOCK 1024
 #define BLOCKSIZE 32
 
 #define CUDA_CHECK(X)                                               \
@@ -154,6 +155,12 @@ void MergeSortOnDevice(DATA *arr, size_t size, int blockSize, int gridSize,
   gpu_shared_mergesort<<<gridSize, sharedBlockSize>>>(A, B, size);
 
   size_t starting_width = (MIN(MAX_SHARED_SIZE, size / gridSize)) * 2;
+  
+  size_t remainingDataBlocks = size / (starting_width / 2);
+  if(blockSize > remainingDataBlocks) {
+    blockSize = MIN(remainingDataBlocks, MAX_THREADS_PER_BLOCK);
+  }
+  gridSize = remainingDataBlocks/blockSize;
   for (size_t width = starting_width; width <= size; width <<= 1) {
     gpu_mergesort<<<gridSize, blockSize>>>(A, B, size, width);
 

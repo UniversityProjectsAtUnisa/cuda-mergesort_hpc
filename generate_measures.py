@@ -137,7 +137,7 @@ def main():
     MEASURES_DIR = 'measures'
     fieldnames = {
         "mergesort.cu": ['block_size', 'task_size', 'grid_size', 'time', 'stdev'],
-        'mergesort_shared.cu': ['block_size', 'shared_block_size', 'shared_task_size', 'grid_size', 'time', 'stdev']
+        'mergesort_shared.cu': ['block_size', 'shared_bs', 'shared_ts', 'grid_size', 'time', 'stdev']
     }
 
     # Deletes every old measure (graphs and tables included)
@@ -152,14 +152,14 @@ def main():
                         avg_time, std_time = avg_measure(N_REPETITIONS, size, block_size, task_size=task_size)
                         grid_size = size / task_size / block_size
                         print(f"SIZE {size}, BLOCK_SIZE {block_size}, GRID_SIZE {grid_size}, {task_size} as task size. AVG_TIME: {avg_time}, STD_TIME {std_time}\n")
-                        rows.append([block_size, task_size, grid_size, avg_time, std_time])
+                        rows.append([block_size, task_size, int(grid_size), avg_time, std_time])
                 else:  # mergesort_shared.cu
                     for shared_block_size in SHARED_BLOCK_SIZES:
                         shared_task_size = MAX_SHARED_SIZE / shared_block_size
                         avg_time, std_time = avg_measure(N_REPETITIONS, size, block_size, shared_block_size=shared_block_size)
                         grid_size = size / MAX_SHARED_SIZE
                         print(f"SIZE {size}, SHARED_BLOCK_SIZE {shared_block_size}, BLOCK_SIZE {block_size}, GRID_SIZE {grid_size}, {shared_task_size} as task size. AVG_TIME: {avg_time}, STD_TIME {std_time}\n")
-                        rows.append([block_size, shared_block_size, shared_task_size, grid_size, avg_time, std_time])
+                        rows.append([block_size, shared_block_size, int(shared_task_size), int(grid_size), avg_time, std_time])
 
             # Save results in csv file
             write_table(fieldnames[source], rows, path)
