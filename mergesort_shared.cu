@@ -223,7 +223,15 @@ __global__ void gpu_shared_mergesort(DATA *A, DATA *B, size_t size) {
   __syncthreads();
 
   // Mergesort on local_n elements
-  int n_swaps =
+  int n_swaps;
+  if(local_n == blockDataSize) {
+    // returns if there is only one thread per block
+    n_swaps = gpu_serial_merge_sort(localA + localStart, localB + localStart, local_n);
+    DATA *localAptr = n_swaps % 2 == 1 ? localB : localA;
+    memcpy(A + globalStart, localAptr + localStart, local_n * sizeof(DATA));
+    return;
+  }
+  n_swaps =
       gpu_serial_merge_sort(localA + localStart, localB + localStart, local_n);
   DATA *localAptr = n_swaps % 2 == 1 ? localB : localA;
   DATA *localBptr = localAptr == localA ? localB : localA;
