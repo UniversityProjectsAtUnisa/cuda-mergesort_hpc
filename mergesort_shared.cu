@@ -3,14 +3,14 @@
  * 
  * Lecturer: Francesco Moscato    fmoscato@unisa.it
  * 
- * Group: 
+ * Group:
  * De Stefano Alessandro   0622701470  a.destefano56@studenti.unisa.it
  * Della Rocca Marco   0622701573  m.dellarocca22@studenti.unisa.it
  * 
  * CUDA implementation of mergesort algorithm 
  * Copyright (C) 2022 Alessandro De Stefano (EarendilTiwele) Marco Della Rocca (marco741)
  * 
- * This file is part of OMP Mergesort implementation.
+ * This file is part of CUDA Mergesort implementation.
  * 
  * CUDA Mergesort implementation is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +25,15 @@
  * You should have received a copy of the GNU General Public License
  * along with CUDA Mergesort implementation.  If not, see <http://www.gnu.org/licenses/>.
  */
+
+/**
+ * @file mergesort_shared.cu
+ * @brief Measures the execution time of the shared memory-based Mergesort algorithm
+ * 
+ * @copyright Copyright (c) 2022
+ * 
+ */
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,12 +66,14 @@ __device__ void gpu_bottomUpMerge(DATA *arr1, size_t size1, DATA *arr2,
                                   size_t size2, DATA *tmp);
 __device__ int gpu_serial_merge_sort(DATA *arr, DATA *tmp, size_t n);
 
-void print_array_(DATA *arr, size_t n) {
-  for (size_t i = 0; i < n; i++) {
-    printf("%d\n", arr[i]);
-  }
-}
 
+/**
+ * @brief Creates the array to be sorted and calls the mergesort on host and device
+ * 
+ * @param argc number of arguments
+ * @param argv arguments. Accepts size as first argument, blocksize as second argument and tasksize as third argument
+ * @return int status code 
+ */
 int main(int argc, char **argv) {
   size_t size = SIZE;
   if (argc > 1) sscanf(argv[1], "%zu", &size);
@@ -95,6 +106,12 @@ int main(int argc, char **argv) {
   assert(memcmp(hostArr, arr, size * sizeof(DATA)) == 0);
 }
 
+/**
+ * @brief Merge sorts an array of size 'n' using CPU
+ *
+ * @param arr the array to be sorted
+ * @param n the size of the array
+ */
 void MergeSortOnHost(DATA *arr, size_t n) {
   if (n == 0) return;
   DATA *tmp;
@@ -116,6 +133,15 @@ void MergeSortOnHost(DATA *arr, size_t n) {
   }
 }
 
+/**
+ * @brief Utility to implement the merging part in the merge sort algorithm
+ *
+ * @param arr1 the first array to be merged
+ * @param size1 the size of the first array
+ * @param arr2 the second array to be merged
+ * @param size2 the size of the second array
+ * @param tmp the temporary array to implement the algorithm 
+ */
 void _merge(DATA *arr1, size_t size1, DATA *arr2, size_t size2, DATA *tmp) {
   size_t i = 0, j = 0;
 
@@ -134,6 +160,15 @@ void _merge(DATA *arr1, size_t size1, DATA *arr2, size_t size2, DATA *tmp) {
   memcpy(arr1, tmp, (size1 + size2) * sizeof(DATA));
 }
 
+/**
+ * @brief Merge sorts an array of size 'size' using GPU
+ *
+ * @param arr the array to be sorted
+ * @param size the size of the array
+ * @param blockSize the number of threads per block to use
+ * @param gridSize the number of blocks per grid to use
+ * @param taskSize the initial workload of a single thread
+ */
 void MergeSortOnDevice(DATA *arr, size_t size, int blockSize, int gridSize,
                        int sharedBlockSize) {
   if (size == 0) return;
@@ -190,12 +225,14 @@ void MergeSortOnDevice(DATA *arr, size_t size, int blockSize, int gridSize,
   CUDA_CHECK(cudaFree(dArr));
 }
 
-__device__ void print_array(DATA *arr, size_t n) {
-  for (size_t i = 0; i < n; i++) {
-    printf("%d\n", arr[i]);
-  }
-}
-
+/**
+ * @brief GPU utility to implement the serial merge sort
+ *
+ * @param arr the array to be sorted
+ * @param tmp the support array used in the implementation
+ * @param n the size of the array
+ * @return int number of pointer swaps in the process
+ */
 __device__ int gpu_serial_merge_sort(DATA *arr, DATA *tmp, size_t n) {
   if (n == 0) return;
   int n_swaps = 0;
@@ -214,6 +251,13 @@ __device__ int gpu_serial_merge_sort(DATA *arr, DATA *tmp, size_t n) {
   return n_swaps;
 }
 
+/**
+ * @brief GPU kernel to implement the shared memory-based part of the merge sort algorithm
+ *
+ * @param A the input array to work with
+ * @param B the temporary array to implement the algorithm
+ * @param size the size of the array
+ */
 __global__ void gpu_shared_mergesort(DATA *A, DATA *B, size_t size) {
   __shared__ DATA localA[MAX_SHARED_SIZE];
   __shared__ DATA localB[MAX_SHARED_SIZE];
@@ -269,6 +313,15 @@ __global__ void gpu_shared_mergesort(DATA *A, DATA *B, size_t size) {
   }
 }
 
+/**
+ * @brief GPU kernel to implement the parallel work for the merge sort algorithm
+ * using the global memory
+ *
+ * @param A the input array to work with
+ * @param B the temporary array to implement the algorithm
+ * @param size the size of the array
+ * @param width the width of the sorted blocks wanted in output
+ */
 __global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width) {
   size_t start = width * (blockIdx.x * blockDim.x + threadIdx.x);
 
@@ -280,6 +333,15 @@ __global__ void gpu_mergesort(DATA *A, DATA *B, size_t size, size_t width) {
                     B + start);
 }
 
+/**
+ * @brief GPU utility to implement the merge part in the algorithm
+ *
+ * @param arr1 the first array to be merged
+ * @param size1 the size of the first array
+ * @param arr2 the second array to be merged
+ * @param size2 the size of the second array
+ * @param tmp the temporary array to implement the algorithm
+ */
 __device__ void gpu_bottomUpMerge(DATA *arr1, size_t size1, DATA *arr2,
                                   size_t size2, DATA *tmp) {
   size_t i = 0, j = 0;

@@ -3,14 +3,14 @@ Course: High Performance Computing 2021/2022
 
 Lecturer: Francesco Moscato    fmoscato@unisa.it
 
-Group: 
+Group:
 De Stefano Alessandro   0622701470  a.destefano56@studenti.unisa.it
 Della Rocca Marco   0622701573  m.dellarocca22@studenti.unisa.it
 
 CUDA implementation of mergesort algorithm 
 Copyright (C) 2022 Alessandro De Stefano (EarendilTiwele) Marco Della Rocca (marco741)
 
-This file is part of OMP Mergesort implementation.
+This file is part of CUDA Mergesort implementation.
 
 CUDA Mergesort implementation is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -34,7 +34,7 @@ import shutil
 
 
 def run_command(command):
-    """Runs a command in bash synchronously
+    """Runs a command synchronously in the shell in which the script is executed
 
     Args:
         command (str): Command to run
@@ -55,7 +55,7 @@ def build_source(source):
     """Builds the source file
 
     Args:
-        source (str): The source file
+        source (str): The source file to build
     """
     run_command(f"nvcc {source} -o a.out -m32")
 
@@ -64,7 +64,6 @@ def single_measure(size, block_size, shared_block_size, task_size):
     """Measure the execution time for one run of the program with given parameters
 
     Args:
-        source (str): the source cuda file to execute
         size (int): the size of the array to sort
         block_size (int): the number of threads in a block
         shared_block_size (int): the number of threads in a block with shared memory
