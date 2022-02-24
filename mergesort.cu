@@ -10,7 +10,7 @@
  * CUDA implementation of mergesort algorithm 
  * Copyright (C) 2022 Alessandro De Stefano (EarendilTiwele) Marco Della Rocca (marco741)
  * 
- * This file is part of CUDAA Mergesort implementation.
+ * This file is part of CUDA Mergesort implementation.
  * 
  * CUDA Mergesort implementation is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
