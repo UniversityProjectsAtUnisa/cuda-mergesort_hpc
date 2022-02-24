@@ -187,7 +187,7 @@ void MergeSortOnDevice(DATA *arr, size_t size, int blockSize, int gridSize, int 
   DATA *A = dArr, *B = tmp;
   gpu_mergesort_tasksize<<<gridSize, blockSize>>>(A, B, size, taskSize);
 
-  for (size_t width = taskSize; width <= size; width <<= 1) {
+  for (size_t width = 2 * taskSize; width <= size; width <<= 1) {
 
     // Actually call the kernel
     gpu_mergesort<<<gridSize, blockSize>>>(A, B, size, width);
